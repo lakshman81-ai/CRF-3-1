@@ -56,6 +56,14 @@ export class SectionBox {
         this.hide();
     }
 
+    updateCamera(newCamera) {
+        this.camera = newCamera;
+        if (this.transformControls) {
+            this.transformControls.camera = newCamera;
+            this.transformControls.updateMatrixWorld();
+        }
+    }
+
     enable(boundingBox) {
         this.enabled = true;
         this.renderer.localClippingEnabled = true;

@@ -1012,6 +1012,9 @@ export class IsometricRenderer {
       }
       this._controls.object = this._camera;
       this._controls.update();
+      if (this._sectionBox) {
+          this._sectionBox.updateCamera(this._camera);
+      }
       this._onCameraChange();
   }
 

@@ -5,6 +5,7 @@
  * The renderer must be initialised and appended to the DOM by isometric-renderer.js.
  */
 
+import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { toThree } from './pipe-geometry.js';
 import { state } from '../core/state.js';
