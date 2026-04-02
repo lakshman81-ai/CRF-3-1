@@ -62,16 +62,12 @@ export class IsometricRenderer {
 
     this._isOrtho = state.viewerSettings.projection === 'orthographic';
 
-    const frustum = 5000;
-
     this._orthoCamera = new THREE.OrthographicCamera(
       -frustum * aspect, frustum * aspect,
       frustum, -frustum,
       -100000, 1000000
     );
     this._perspCamera = new THREE.PerspectiveCamera(state.viewerSettings.fov || 60, aspect, 0.1, 1000000);
-
-    this._isOrtho = state.viewerSettings.projection === 'orthographic';
     this._camera = this._isOrtho ? this._orthoCamera : this._perspCamera;
 
     this._orthoCamera.up.set(0, 1, 0);
