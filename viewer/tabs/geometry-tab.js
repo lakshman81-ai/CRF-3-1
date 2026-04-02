@@ -68,6 +68,11 @@ export async function renderGeometry(container) {
                 <option value="HeatMap:P1">Heat Map: P1</option>
               </select>
             </label>
+
+            <label class="control-label" style="margin-left: 12px; border-left: 1px solid #ccc; padding-left: 12px;">
+              <input type="checkbox" id="tog-labels-quick" ${state.viewerSettings?.showLabels ? 'checked' : ''}> Node Labels
+            </label>
+            <button class="btn-secondary" id="btn-display-all" style="margin-left:auto;">Display All</button>
           </div>
 
           <div class="geo-body">
@@ -236,6 +241,19 @@ function _wireControls(container) {
        state.legendField = e.target.value;
     }
     emit('legend-changed', state.legendField);
+  });
+
+  container.querySelector('#tog-labels-quick')?.addEventListener('change', e => {
+      state.viewerSettings.showLabels = e.target.checked;
+      emit('viewer-settings-changed', { key: 'showLabels', value: e.target.checked });
+  });
+
+  container.querySelector('#btn-display-all')?.addEventListener('click', () => {
+      // Equivalent to escape
+      if (_renderer && _renderer._clearSelection) {
+          _renderer._clearSelection();
+          _renderer.resetView();
+      }
   });
 }
 

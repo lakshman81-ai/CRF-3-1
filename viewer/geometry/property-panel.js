@@ -119,18 +119,28 @@ export function showViewportChip(element, x, y) {
     const tUnit = unitSuffix(state.parsed?.units?.temperature);
     const pUnit = unitSuffix(state.parsed?.units?.pressure);
 
+    const is3D = state.viewerSettings.themePreset === '3DTheme';
+    const bg = is3D ? '#1e293b' : 'rgba(255, 255, 255, 0.95)';
+    const color = is3D ? '#f1f5f9' : '#333';
+    const muted = is3D ? '#94a3b8' : '#666';
+    const border = is3D ? '#334155' : '#eee';
+
+    chip.style.background = bg;
+    chip.style.color = color;
+    chip.style.borderColor = border;
+
     chip.innerHTML = `
-        <div style="font-weight: bold; border-bottom: 1px solid #eee; padding-bottom: 4px; margin-bottom: 2px;">
+        <div style="font-weight: bold; border-bottom: 1px solid ${border}; padding-bottom: 4px; margin-bottom: 2px;">
             ${element.pipelineRef || 'SYS-177A'} &bull; ${element.isBend ? 'Bend' : 'Pipe'}
         </div>
         <div style="display:flex; justify-content: space-between;">
-            <span style="color:#666;">Size:</span> <span>Ø${element.od}</span>
+            <span style="color:${muted};">Size:</span> <span>Ø${element.od}</span>
         </div>
         <div style="display:flex; justify-content: space-between;">
-            <span style="color:#666;">Mat:</span> <span>${element.material || 'CS'}</span>
+            <span style="color:${muted};">Mat:</span> <span>${element.material || 'CS'}</span>
         </div>
         <div style="display:flex; justify-content: space-between;">
-            <span style="color:#666;">T1/P1:</span> <span>${element.T1}${tUnit} / ${element.P1}${pUnit}</span>
+            <span style="color:${muted};">T1/P1:</span> <span>${element.T1}${tUnit} / ${element.P1}${pUnit}</span>
         </div>
     `;
 

@@ -162,16 +162,25 @@ export class IsometricRenderer {
 
   _applyTheme() {
       const is3D = state.viewerSettings.themePreset === '3DTheme';
-      this._scene.background = new THREE.Color(state.viewerSettings.backgroundColor || (is3D ? '#1a1a2e' : '#ffffff'));
+
+      const THEMES = {
+          IsoTheme: { bg: '#ffffff', pipeSize: 3, pipeColorMode: 'material' },
+          '3DTheme': { bg: '#020617', pipeSize: 6, pipeColorMode: '3d-light' }
+      };
+
+      const theme = is3D ? THEMES['3DTheme'] : THEMES.IsoTheme;
+      this._scene.background = new THREE.Color(state.viewerSettings.backgroundColor || theme.bg);
 
       // Update materials based on theme
       this._pipeGroup.traverse(child => {
           if (child.material && child.material.isLineMaterial) {
-              if (is3D) {
-                  // Thicker lines for '3D' feel on wireframes
-                  child.material.linewidth = 5;
-              } else {
-                  child.material.linewidth = 3;
+              child.material.linewidth = theme.pipeSize;
+
+              if (is3D && child.userData && child.userData.element) {
+                   // Light pipe colors for dark theme if not overriden by legend
+                   if (state.legendField === 'pipelineRef') {
+                       child.material.color.setHex(0xcbd5e1); // PCF Studio LIGHT slate
+                   }
               }
               child.material.needsUpdate = true;
           }
@@ -281,11 +290,14 @@ export class IsometricRenderer {
       let prevX = 0, prevY = 0;
       this._controls.enableRotate = false;
 
-      // Determine axis based on convention
-      const isZup = state.viewerSettings.axisConvention === 'Z-up';
-      const VERTICAL_AXIS = isZup ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
-      const axis = new THREE.Vector3();
+      // Planar modes logic.
+      // Use OrbitControls directly but lock rotation using azimuth/polar clamping depending on the axis.
+      // E.g. rotate about Y (world Y) = allow azimuth rotation, lock polar.
+      // rotate about X = need custom math as orbit controls only orbits around Y (or configured up vector) natively.
 
+      const isZup = state.viewerSettings.axisConvention === 'Z-up';
+      const upAxis = isZup ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+      const axis = new THREE.Vector3();
       if (mode === 'rotateY') axis.set(0, 1, 0);
       else if (mode === 'rotateX') axis.set(1, 0, 0);
       else if (mode === 'rotateZ') axis.set(0, 0, 1);
@@ -307,14 +319,30 @@ export class IsometricRenderer {
           prevX = e.clientX;
           prevY = e.clientY;
 
-          // Use horizontal drag for all planar modes
-          const angle = -(dx) / canvas.clientWidth * Math.PI * 2.5 * this._controls.rotateSpeed;
+          let hAngle = -(dx) / canvas.clientWidth * Math.PI * 2.5 * this._controls.rotateSpeed;
+          let vAngle = -(dy) / canvas.clientHeight * Math.PI * 2.5 * this._controls.rotateSpeed;
 
           const offset = this._camera.position.clone().sub(this._controls.target);
-          offset.applyAxisAngle(axis, angle);
+
+          // For Rotate about X/Y/Z, we map horizontal mouse drag to rotate about the selected axis.
+          // PCF Studio style: single axis constraint.
+          offset.applyAxisAngle(axis, hAngle);
+
           this._camera.position.copy(this._controls.target).add(offset);
           this._camera.lookAt(this._controls.target);
           this._camera.updateProjectionMatrix();
+
+          // Log rotation data
+          import('../core/logger.js').then(({ addLog, SEVERITY, CATEGORY }) => {
+              // Throttle logging to avoid spam
+              if (Math.random() < 0.05) {
+                 addLog({
+                     severity: SEVERITY.INFO,
+                     category: CATEGORY.NAVIGATION,
+                     message: `Planar rotation applied about ${mode}: hAngle=${hAngle.toFixed(4)}`,
+                 });
+              }
+          });
       };
 
       const onUp = (e) => {
@@ -517,9 +545,25 @@ export class IsometricRenderer {
               this._selectedObject = object;
               if (object.userData && object.userData.element) {
                   renderPropertyPanel(object.userData.element);
-                  // Highlight selection logic can go here (e.g., emissive color)
               }
           } else {
+              if (this._selectedObject) {
+                  import('../core/logger.js').then(({ addLog, SEVERITY, CATEGORY }) => {
+                      addLog({
+                          severity: SEVERITY.INFO,
+                          category: CATEGORY.UI,
+                          message: "Cleared selection via background click"
+                      });
+                  });
+              } else {
+                  import('../core/logger.js').then(({ addLog, SEVERITY, CATEGORY }) => {
+                      addLog({
+                          severity: SEVERITY.WARNING,
+                          category: CATEGORY.UI,
+                          message: "Selection failure: clicked background but no object intersected"
+                      });
+                  });
+              }
               this._selectedObject = null;
               renderPropertyPanel(null);
           }
@@ -632,6 +676,14 @@ export class IsometricRenderer {
       this._controls.target.copy(center);
       this._camera.updateProjectionMatrix();
       this._controls.update();
+
+      import('../core/logger.js').then(({ addLog, SEVERITY, CATEGORY }) => {
+          addLog({
+              severity: SEVERITY.INFO,
+              category: CATEGORY.NAVIGATION,
+              message: `View change: snapped to preset dir [${dirVec.join(',')}]`,
+          });
+      });
   }
   _buildViewCube() {
       // Replaced with dedicated inset viewcube renderer in future refactoring if needed.
