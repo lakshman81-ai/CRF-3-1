@@ -131,8 +131,12 @@ export class IsometricRenderer {
     this._lightsGroup.add(ambientLight, pointLight, directionalLight);
 
     this._sceneRoot = new THREE.Group();
-    this._sceneRoot.add(this._pipeGroup, this._symbolGroup, this._labelGroup, this._lightsGroup);
+    this._sceneRoot.add(this._pipeGroup, this._symbolGroup, this._lightsGroup);
     this._scene.add(this._sceneRoot);
+
+    // Labels must be added to the scene directly because CSS2DObject rotation is tied to its group hierarchy
+    // and passing -90 rotation to parent causes billboard label clipping/rotation bugs natively.
+    this._scene.add(this._labelGroup);
 
     const ro = new ResizeObserver(() => this._onResize());
     ro.observe(this._container);
@@ -173,7 +177,8 @@ export class IsometricRenderer {
           if (this._gizmoEl) this._gizmoEl.style.display = state.viewerSettings.showAxisGizmo ? 'block' : 'none';
       } else if (e.key === 'themePreset') {
           this._applyTheme();
-      } else if (e.key === 'showLabels') {
+      } else if (e.key === 'showLabels' || e.key === 'labelMode') {
+          this._rebuildLabels();
           this._labelGroup.visible = !!state.viewerSettings.showLabels;
       } else if (e.key === 'reset') {
           this._applySettings({key: 'projection', value: state.viewerSettings.projection});
@@ -622,7 +627,7 @@ export class IsometricRenderer {
 
   resetView() {
       import('./camera-utils.js').then(({ fitCamera }) => {
-          fitCamera(this._camera, this._controls, this._pipeGroup, this._container.clientWidth, this._container.clientHeight);
+          fitCamera(this._camera, this._controls, this._sceneRoot, this._container.clientWidth, this._container.clientHeight);
       });
   }
 
@@ -661,7 +666,7 @@ export class IsometricRenderer {
   }
 
   _resetPivot() {
-      const box = new THREE.Box3().setFromObject(this._pipeGroup);
+      const box = new THREE.Box3().setFromObject(this._sceneRoot);
       if (!box.isEmpty()) {
           const center = box.getCenter(new THREE.Vector3());
           this._controls.target.copy(center);
@@ -1021,7 +1026,10 @@ export class IsometricRenderer {
       const pos = state.parsed.nodes[nodeId];
       if (!pos) return;
 
-      const p = new THREE.Vector3(pos.y / 1000, pos.z / 1000, pos.x / 1000); // Apply SCALE logic here inline since it's an internal function.
+      // We must apply the sceneRoot transform so the camera flies to the *visual* location,
+      // not just the raw Three.js coordinates, otherwise we miss the object.
+      const p = new THREE.Vector3(pos.y / 1000, pos.z / 1000, pos.x / 1000);
+      p.applyMatrix4(this._sceneRoot.matrixWorld);
 
       const box = new THREE.Box3();
       if (this._pipeGroup) box.setFromObject(this._pipeGroup);
@@ -1031,14 +1039,11 @@ export class IsometricRenderer {
       const offset = this._camera.position.clone().sub(this._controls.target);
       offset.normalize().multiplyScalar(span);
 
-      // GSAP animate camera would go here if gsap was loaded. Using direct jump.
       this._camera.position.copy(p).add(offset);
       this._controls.target.copy(p);
       this._camera.lookAt(p);
       this._controls.update();
       this._onCameraChange();
-
-      // Highlight logic could also go here
   }
 
   rebuild() {
@@ -1127,7 +1132,10 @@ export class IsometricRenderer {
       const axis = new THREE.Vector3(1, 0, 0); // default
       let od = 100;
       if (connectedEl) {
-          axis.set(connectedEl.dx, connectedEl.dy, connectedEl.dz).normalize();
+          // IMPORTANT: connectedEl.dx, dy, dz are in world CAESAR space.
+          // We must map them to Three.js space exactly like `toThree` does for positions:
+          // threeX = caesarY, threeY = caesarZ, threeZ = caesarX.
+          axis.set(connectedEl.dy, connectedEl.dz, connectedEl.dx).normalize();
           od = connectedEl.od || 100;
       }
 
@@ -1204,7 +1212,8 @@ export class IsometricRenderer {
 
     const elements = this._getPcfElements();
     const { nodes } = data;
-    const showLabels = state.geoToggles.nodeLabels;
+    // Align with global viewer setting instead of legacy geoToggle
+    const showLabels = state.viewerSettings.showLabels !== false;
 
     if (showLabels) {
       for (const [nodeId, pos] of Object.entries(nodes)) {

@@ -73,8 +73,8 @@ export function renderSettingsPanel(container) {
                     <label>
                         <span>Theme</span>
                         <select id="set-theme-preset">
-                            <option value="IsoTheme" ${state.viewerSettings.themePreset === 'IsoTheme' ? 'selected' : ''}>IsoTheme (Line-Art)</option>
-                            <option value="3DTheme" ${state.viewerSettings.themePreset === '3DTheme' ? 'selected' : ''}>3D Theme (Shaded)</option>
+                            <option value="IsoTheme" ${state.viewerSettings.themePreset === 'IsoTheme' ? 'selected' : ''}>Light Theme (Paper Iso)</option>
+                            <option value="3DTheme" ${state.viewerSettings.themePreset === '3DTheme' ? 'selected' : ''}>Dark Theme (3D Studio)</option>
                         </select>
                     </label>
                 </div>

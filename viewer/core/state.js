@@ -41,7 +41,7 @@ export const state = {
   /** Nodes pinned to the Applied Loads table */
   pinnedLoadNodes: [],
   /** Legend field selection for geometry tab */
-  legendField: 'pipelineRef',
+  legendField: 'none',
   /** Geometry overlay toggles */
   geoToggles: {
     nodeLabels: true,

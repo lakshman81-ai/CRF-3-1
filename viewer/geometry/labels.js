@@ -32,6 +32,11 @@ export function createNodeLabel(nodeId, pos) {
 
   const obj = new CSS2DObject(div);
   const p = toThree(pos);
+
+  if (state.viewerSettings?.axisConvention === 'Z-up') {
+      p.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+  }
+
   obj.position.copy(p);
   obj.userData.type = 'node-label';
   return obj;
@@ -64,6 +69,11 @@ export function createSegmentLabel(text, midPos) {
 
   const obj = new CSS2DObject(div);
   const p = toThree(midPos);
+
+  if (state.viewerSettings?.axisConvention === 'Z-up') {
+      p.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+  }
+
   obj.position.copy(p);
   obj.userData.type = 'seg-label';
   obj.userData.text = text;
@@ -89,6 +99,7 @@ export function segmentLabelText(el, legendField, materialFromDensity) {
     case 'P1':          return `P1=${el.P1 ?? '—'} bar`;
     case 'material':    return el.material || materialFromDensity(el.density);
     case 'pipelineRef': return `SYS-177A`;
+    case 'none':        return '';
     default:            return '';
   }
 }

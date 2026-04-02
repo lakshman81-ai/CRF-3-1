@@ -51,6 +51,7 @@ export async function renderGeometry(container) {
             <label class="control-label" style="margin-left:auto;">
               Legend:
               <select id="legend-select">
+                <option value="none">None</option>
                 <option value="pipelineRef">Legends</option>
                 <option value="material">Material</option>
                 <option value="T1">T1${unitSuffix(state.parsed?.units?.temperature)}</option>
@@ -174,6 +175,10 @@ async function _ensureRenderer(container) {
     if (_renderer._gizmoEl) {
       wrap.appendChild(_renderer._gizmoEl);
     }
+
+    // We must update the renderer's internal container reference to the NEW DOM node
+    // since the old `wrap` was destroyed during tab unmount.
+    _renderer._container = wrap;
     _renderer._onResize(); // Adjust size
     return;
   }
@@ -236,7 +241,7 @@ function _wireControls(container) {
   container.querySelector('#heatmap-select')?.addEventListener('change', e => {
     if (e.target.value === 'None') {
        const legendSelect = container.querySelector('#legend-select');
-       state.legendField = legendSelect ? legendSelect.value : 'pipelineRef';
+       state.legendField = legendSelect ? legendSelect.value : 'none';
     } else {
        state.legendField = e.target.value;
     }
