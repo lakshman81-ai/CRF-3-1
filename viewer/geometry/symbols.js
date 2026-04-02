@@ -120,13 +120,14 @@ export function createSupportSymbol(pos, type, pipeAxis, odInMM) {
     const downDir = upAxis.clone().negate();
 
     if (type === 'GUIDE' || type === 'ANCHOR') {
-        group.add(makeArrow(lateral.clone().negate(), od / 2, od, MAT_SUPPORT));
-        group.add(makeArrow(lateral.clone(), od / 2, od, MAT_SUPPORT));
+        // Arrows must point INWARD toward the pipe centreline
+        group.add(makeArrow(lateral.clone(), od / 2, od, MAT_SUPPORT)); // Pointing along lateral from negative side
+        group.add(makeArrow(lateral.clone().negate(), od / 2, od, MAT_SUPPORT)); // Pointing opposite lateral from positive side
         group.add(makeArrow(downDir, od / 2, od, MAT_SUPPORT));
     }
     else if (type === 'STOP') {
-        group.add(makeArrow(lateral.clone().negate(), od / 2, od, MAT_SUPPORT));
         group.add(makeArrow(lateral.clone(), od / 2, od, MAT_SUPPORT));
+        group.add(makeArrow(lateral.clone().negate(), od / 2, od, MAT_SUPPORT));
     }
     else if (type === 'SPRING') {
         // Vertical dashed arrow

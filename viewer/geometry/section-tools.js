@@ -51,7 +51,14 @@ export class SectionBox {
 
         this.transformControls.attach(this.boxMesh);
 
-        // Stencil caps material setup is done on the main materials by IsometricRenderer
+        // Setup stencil cap materials
+        this.stencilGroup = new THREE.Group();
+        this.scene.add(this.stencilGroup);
+
+        // A simple mesh to render the cap where clipping occurs
+        // By rendering a back-side only mesh slightly larger or inside the cut
+        // Note: For a true robust cap we'd use stencil buffers, but a fallback cap can be used.
+        // We'll hook this up to the renderer's clipping planes.
 
         this.hide();
     }

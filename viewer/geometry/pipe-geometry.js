@@ -105,8 +105,9 @@ export function createSolidCylinder(startVec, endVec, radius, color) {
     const axis = new THREE.Vector3(0, 1, 0);
     const quat = new THREE.Quaternion().setFromUnitVectors(axis, diff.clone().normalize());
 
-    const geo = new THREE.CylinderGeometry(radius, radius, length, 12);
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
+    // 16 segments for a smoother look like PCF Studio
+    const geo = new THREE.CylinderGeometry(radius, radius, length, 16);
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.15 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.copy(mid);
     mesh.quaternion.copy(quat);
@@ -115,8 +116,8 @@ export function createSolidCylinder(startVec, endVec, radius, color) {
 
 export function createSolidBend(startPt, midPt, endPt, radius, color, segments = 8) {
     const curve = new THREE.CatmullRomCurve3([startPt, midPt, endPt]);
-    const geo = new THREE.TubeGeometry(curve, segments, radius, 8, false);
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
+    const geo = new THREE.TubeGeometry(curve, segments, radius, 12, false);
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.15 });
     return new THREE.Mesh(geo, mat);
 }
 

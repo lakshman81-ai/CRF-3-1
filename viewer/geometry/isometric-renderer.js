@@ -121,16 +121,21 @@ export class IsometricRenderer {
     });
 
     // Set up lights for 3D Theme
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     const pointLight = new THREE.PointLight(0xffffff, 0.8);
     pointLight.position.set(2000, 4000, 2000);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
     directionalLight.position.set(-1000, 5000, -2000);
 
     this._lightsGroup = new THREE.Group();
     this._lightsGroup.add(ambientLight, pointLight, directionalLight);
 
+    // Add grid helper to the scene
+    this._gridHelper = new THREE.GridHelper(10000, 20, 0x3a4255, 0x252a3a);
+    this._gridHelper.position.y = -500;
+
     this._sceneRoot = new THREE.Group();
+    this._sceneRoot.add(this._gridHelper);
     this._sceneRoot.add(this._pipeGroup, this._symbolGroup, this._lightsGroup);
     this._scene.add(this._sceneRoot);
 
@@ -193,14 +198,15 @@ export class IsometricRenderer {
       const is3D = state.viewerSettings.themePreset === '3DTheme';
 
       const THEMES = {
-          IsoTheme: { bg: '#ffffff', pipeSize: 3, pipeColorMode: 'material' },
-          '3DTheme': { bg: '#020617', pipeSize: 6, pipeColorMode: '3d-light' }
+          IsoTheme: { bg: '#ffffff', pipeSize: 3 },
+          '3DTheme': { bg: '#020617', pipeSize: 6 } // dark industrial slate background
       };
 
       const theme = is3D ? THEMES['3DTheme'] : THEMES.IsoTheme;
       this._scene.background = new THREE.Color(state.viewerSettings.backgroundColor || theme.bg);
 
       this._lightsGroup.visible = is3D;
+      this._gridHelper.visible = is3D;
 
       if (!noRebuild) {
           // Fully rebuild if toggling between line art and solid 3D representation
@@ -209,16 +215,16 @@ export class IsometricRenderer {
   }
 
   _applyAxisConvention() {
-      // Default: Z-up
-      // Scene starts in Y-up naturally.
-      // If Z-up: rotate sceneRoot -90 on X. Camera up = (0, 0, 1)
-      // If Y-up: sceneRoot rot = 0. Camera up = (0, 1, 0)
+      // The geometries created by toThree(pos) already map Z to Up.
+      // We do NOT want to rotate the sceneRoot again as this will make it upside down.
+      // Just keep rotation at 0 and set camera up.
+      this._sceneRoot.rotation.set(0, 0, 0);
+
       if (state.viewerSettings.axisConvention === 'Z-up') {
-          this._sceneRoot.rotation.x = -Math.PI / 2;
-          this._orthoCamera.up.set(0, 0, 1);
-          this._perspCamera.up.set(0, 0, 1);
+          this._orthoCamera.up.set(0, 1, 0); // Because we mapped Caesar Z to Three Y
+          this._perspCamera.up.set(0, 1, 0);
       } else {
-          this._sceneRoot.rotation.x = 0;
+          // If the user wants Y-up literally, we could swap it here if needed, but the original logic didn't.
           this._orthoCamera.up.set(0, 1, 0);
           this._perspCamera.up.set(0, 1, 0);
       }
@@ -253,8 +259,9 @@ export class IsometricRenderer {
           camera.far  = (dist + sphere.radius) * 10;
       } else {
           // Ortho
-          camera.near = -sphere.radius * 2;
-          camera.far = sphere.radius * 2;
+          // In orthographic projection, near/far must enclose the scene bounds relative to the camera position
+          camera.near = Math.min(-100000, -sphere.radius * 2);
+          camera.far = Math.max(100000, sphere.radius * 2);
       }
       camera.updateProjectionMatrix();
   }
@@ -725,7 +732,7 @@ export class IsometricRenderer {
 
       const FACES = [
           { label: 'Top', rot: 'rotateX(-90deg)', bg: '#3b6ea5', cam: [0, 1, 0], up: [0, 0, -1] },
-          { label: 'Bot', rot: 'rotateX(90deg)', bg: '#2b5285', cam: [0, -1, 0], up: [0, 0, 1] },
+          { label: 'Bottom', rot: 'rotateX(90deg)', bg: '#2b5285', cam: [0, -1, 0], up: [0, 0, 1] },
           { label: 'Front', rot: `translateZ(${half}px)`, bg: '#4a7c95', cam: [0, 0, 1], up: [0, 1, 0] },
           { label: 'Back', rot: `rotateY(180deg) translateZ(${half}px)`, bg: '#4a7c95', cam: [0, 0, -1], up: [0, 1, 0] },
           { label: 'Right', rot: `rotateY(90deg) translateZ(${half}px)`, bg: '#3a6e85', cam: [1, 0, 0], up: [0, 1, 0] },
@@ -738,8 +745,8 @@ export class IsometricRenderer {
           face.style.cssText = `
               position:absolute;width:${size}px;height:${size}px;
               display:flex;align-items:center;justify-content:center;
-              font-size:12px;font-weight:bold;color:#fff;background:${f.bg}cc;
-              border:1px solid #ffffff55;box-sizing:border-box;
+              font-size:11px;font-weight:700;color:#fff;background:${f.bg}cc;
+              border:1px solid #ffffff33;box-sizing:border-box;
               transform:${f.rot};backface-visibility:visible;
           `;
           face.addEventListener('mouseenter', () => face.style.background = `${f.bg}ff`);
@@ -781,19 +788,24 @@ export class IsometricRenderer {
 
   _syncViewCube() {
       if (!this._viewCubeInner || !this._camera || state.viewerSettings.showViewCube === false) return;
-      const q = this._camera.quaternion.clone();
 
-      if (state.viewerSettings.axisConvention === 'Z-up') {
-         const rootQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-         q.premultiply(rootQ.clone().invert());
-      }
+      // Get the rotation of the camera relative to the world
+      const camRot = new THREE.Matrix4().extractRotation(this._camera.matrixWorldInverse);
 
-      this._viewCubeInner.style.transform =
-          `matrix3d(${new THREE.Matrix4().makeRotationFromQuaternion(q.clone().invert()).elements.join(',')})`;
+      // Three.js (WebGL) uses right-handed, Y-up.
+      // CSS3D uses left-handed, Y-down.
+      // We flip the Y and Z axes to map the webgl view onto the CSS cube correctly.
+      const cssScale = new THREE.Matrix4().makeScale(1, -1, 1);
+      const viewCubeMatrix = new THREE.Matrix4()
+        .multiply(cssScale)
+        .multiply(camRot)
+        .multiply(cssScale);
+
+      this._viewCubeInner.style.transform = `translateZ(-150px) matrix3d(${viewCubeMatrix.elements.join(',')})`;
   }
 
   _buildAxisGizmo() {
-    const SZ = 120;
+    const SZ = 80;
     let container = document.getElementById('pcf-axis-gizmo');
     if (container) {
       this._gizmoEl = container;
@@ -818,99 +830,47 @@ export class IsometricRenderer {
   _syncAxisGizmo() {
     const ctx = this._axisGizmoCtx;
     if (!ctx || !this._camera) return;
-    const W = 120, H = 120, cx = W / 2, cy = H / 2, len = 42;
+    const W = 80, H = 80, cx = W / 2, cy = H / 2, len = 28;
 
     ctx.clearRect(0, 0, W, H);
 
-    // Background circle
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, 56, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(20,20,30,0.18)';
-    ctx.fill();
-    ctx.restore();
-
-    // CAESAR axis labels mapped to Three.js directions:
-    //   Three.js +X = CAESAR North (Y)  → green  → label "Y"
-    //   Three.js +Y = CAESAR Up    (Z)  → blue   → label "Z"
-    //   Three.js +Z = CAESAR East  (X)  → red    → label "X"
-    const AXES = [
-      { dir: new THREE.Vector3(1, 0, 0),  color: '#33cc33', neg: '#226622', label: 'Y' }, // CAESAR Y (North)
-      { dir: new THREE.Vector3(0, 1, 0),  color: '#3388ff', neg: '#224488', label: 'Z' }, // CAESAR Z (Up)
-      { dir: new THREE.Vector3(0, 0, 1),  color: '#ff3333', neg: '#882222', label: 'X' }, // CAESAR X (East)
+    // Z-up mapping matching PCF Studio
+    // With our updated scaling, Three Y = Up(Z), Three -Z = North(Y), Three X = East(X)
+    let AXES = [
+        { dir: new THREE.Vector3(0, 0, 1),  color: '#ff4444', label: 'X' }, // East
+        { dir: new THREE.Vector3(1, 0, 0), color: '#44cc44', label: 'Y' }, // North
+        { dir: new THREE.Vector3(0, 1, 0),  color: '#4488ff', label: 'Z' }, // Up
     ];
 
-    // Project all axes and sort back-to-front (draw behind first)
-    const projected = AXES.map(({ dir, color, neg, label }) => {
-      const proj = dir.clone().applyQuaternion(this._camera.quaternion);
-      return { proj, color, neg, label, depth: proj.z };
+    const projected = AXES.map(({ dir, color, label }) => {
+      const proj = dir.clone().applyQuaternion(this._camera.quaternion.clone().invert());
+      return { proj, color, label, depth: proj.z };
     });
-    projected.sort((a, b) => b.depth - a.depth); // highest z = most behind = draw first
+    projected.sort((a, b) => b.depth - a.depth);
 
-    for (const { proj, color, neg, label } of projected) {
-      const isFront = proj.z <= 0;  // z<=0 in camera space = pointing toward viewer
-      const alpha = isFront ? 1.0 : 0.32;
-      const lineW = isFront ? 3 : 1.5;
-      const tipR  = isFront ? 5 : 3;
+    for (const { proj, color, label } of projected) {
+      const isFront = proj.z <= 0;
+      const alpha = isFront ? 1.0 : 0.4;
 
       const ex = cx + proj.x * len;
       const ey = cy - proj.y * len;
-      const axColor = isFront ? color : neg;
 
       ctx.save();
       ctx.globalAlpha = alpha;
 
-      // Shaft
-      ctx.strokeStyle = axColor;
-      ctx.lineWidth = lineW;
-      ctx.lineCap = 'round';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.lineTo(ex, ey);
       ctx.stroke();
 
-      if (isFront) {
-        // Arrow head (filled triangle)
-        const ang = Math.atan2(ey - cy, ex - cx);
-        const aLen = 10, aWid = 0.45;
-        ctx.fillStyle = axColor;
-        ctx.beginPath();
-        ctx.moveTo(ex, ey);
-        ctx.lineTo(ex - aLen * Math.cos(ang - aWid), ey - aLen * Math.sin(ang - aWid));
-        ctx.lineTo(ex - aLen * Math.cos(ang + aWid), ey - aLen * Math.sin(ang + aWid));
-        ctx.closePath();
-        ctx.fill();
-      } else {
-        // Dot at tip for behind axes
-        ctx.fillStyle = axColor;
-        ctx.beginPath();
-        ctx.arc(ex, ey, tipR, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Label with contrasting halo
-      const lx = ex + (proj.x >  0.1 ?  8 : proj.x < -0.1 ? -16 : -5);
-      const ly = ey + (proj.y < -0.1 ?  14 : proj.y >  0.1 ?  -6 :  5);
-      ctx.font = isFront ? 'bold 13px sans-serif' : '11px sans-serif';
-
-      // Halo for readability on white background
-      ctx.globalAlpha = alpha * 0.7;
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = 3;
-      ctx.strokeText(label, lx, ly);
-
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = axColor;
-      ctx.fillText(label, lx, ly);
+      ctx.fillStyle = color;
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillText(label, ex + (ex > cx ? 2 : -10), ey + (ey > cy ? 10 : -2));
 
       ctx.restore();
     }
-
-    // Center dot
-    ctx.beginPath();
-    ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#cccccc';
-    ctx.fill();
   }
 
   _animate() {
@@ -1020,10 +980,9 @@ export class IsometricRenderer {
       const pos = state.parsed.nodes[nodeId];
       if (!pos) return;
 
-      // We must apply the sceneRoot transform so the camera flies to the *visual* location,
-      // not just the raw Three.js coordinates, otherwise we miss the object.
-      const p = new THREE.Vector3(pos.y / 1000, pos.z / 1000, pos.x / 1000);
-      p.applyMatrix4(this._sceneRoot.matrixWorld);
+      // Calculate properly transformed pos
+      const SCALE = 1 / 1000;
+      const p = new THREE.Vector3(pos.y * SCALE, pos.z * SCALE, pos.x * SCALE);
 
       const box = new THREE.Box3();
       if (this._pipeGroup) box.setFromObject(this._pipeGroup);
