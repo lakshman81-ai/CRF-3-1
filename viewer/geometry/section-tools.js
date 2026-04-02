@@ -45,7 +45,9 @@ export class SectionBox {
         this.transformControls.setSpace('local');
         this.transformControls.showRotation = false;
         this.transformControls.showScale = true; // We scale to resize the box
-        this.scene.add(this.transformControls.getHelper());
+
+        // In three.js r160, TransformControls extends Object3D directly and is added to the scene
+        this.scene.add(this.transformControls);
 
         this.transformControls.attach(this.boxMesh);
 
