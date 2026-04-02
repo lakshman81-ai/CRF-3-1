@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pipe Stress Report Viewer — SYS-177A</title>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles/base.css">
+  <link rel="stylesheet" href="styles/tabs.css">
+  <link rel="stylesheet" href="styles/tables.css">
+  <link rel="stylesheet" href="styles/geometry.css">
+  <link rel="stylesheet" href="styles/debug.css">
+  <link rel="stylesheet" href="styles/print.css">
+
+  <!-- Import map — CDN libraries, no build step required -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three":        "https://unpkg.com/three@0.160.1/build/three.module.js",
+      "three/addons/":"https://unpkg.com/three@0.160.1/examples/jsm/",
+      "mdb-reader":   "https://esm.sh/mdb-reader@2",
+      "buffer":       "https://esm.sh/buffer@6"
+    }
+  }
+  </script>
+</head>
+<body>
+
+<!-- ── App Header ─────────────────────────────────────────────────────── -->
+<header id="app-header">
+  <div>
+    <div class="header-title">◈ PIPE STRESS REPORT VIEWER</div>
+    <div class="header-sub">
+      <span id="hdr-project" class="editable-field" contenteditable="true" spellcheck="false" data-key="project">Petroleum Development Oman-PDO</span> &nbsp;│&nbsp;
+      <span id="hdr-system">SYS-177A</span> &nbsp;│&nbsp; 
+      <span id="hdr-code" class="editable-field" contenteditable="true" spellcheck="false" data-key="code">ASME B31.3-2016</span>
+    </div>
+  </div>
+  <div class="header-meta">
+    <span id="hdr-docno" class="editable-field docno-field" contenteditable="true" spellcheck="false" data-key="docNo">XX-XX-PFEED-</span> &nbsp;│&nbsp;
+    <span id="hdr-rev" class="editable-field" contenteditable="true" spellcheck="false" data-key="revision">Rev 0</span>
+  </div>
+  <div class="header-actions">
+    <span id="app-status" class="banner-info">No file loaded</span>
+    <button id="print-btn" class="btn-secondary">⎙ Print</button>
+  </div>
+</header>
+
+<!-- ── Layout ─────────────────────────────────────────────────────────── -->
+<div id="app-layout">
+
+  <!-- Tab bar (populated by app.js) -->
+  <nav id="tab-bar"></nav>
+
+  <!-- Tab content area -->
+  <main id="tab-content">
+    <!-- Rendered by active tab module -->
+  </main>
+
+</div>
+
+<!-- ── Print Popup Modal ──────────────────────────────────────────────── -->
+<div id="print-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+  <div style="background:#fff; padding:20px; border-radius:4px; max-width:500px; width:100%; max-height:80vh; display:flex; flex-direction:column;">
+    <h3 style="margin-top:0; border-bottom:1px solid #ccc; padding-bottom:10px;">Select Sections to Print</h3>
+    <div id="print-modal-list" style="overflow-y:auto; flex:1; margin:10px 0;"></div>
+    <div style="text-align:right; border-top:1px solid #ccc; padding-top:10px;">
+      <button id="print-modal-cancel" class="btn-secondary">Cancel</button>
+      <button id="print-modal-confirm" class="btn-primary">Print Selected</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Print-only sections (hidden on screen) ─────────────────────────── -->
+<!--
+  During print (@media print), ALL .report-section elements are rendered.
+  app.js injects the geometry canvas as an <img> into #print-geo-img before window.print().
+-->
+<div class="print-only" id="print-sections-extra">
+  <section class="report-section" id="section-geometry-print">
+    <h3 class="section-heading">Piping Isometric — CAESAR II Model</h3>
+    <img id="print-geo-img" alt="Isometric piping model" style="display:none; max-width:100%;">
+  </section>
+</div>
+
+<!-- ── Bootstrap ──────────────────────────────────────────────────────── -->
+<script type="module">
+  import { init } from './core/app.js';
+  init();
+</script>
+
+</body>
+</html>
