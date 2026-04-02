@@ -39,6 +39,7 @@ function _render(container) {
   const format   = parsed?.format ?? '—';
   const units    = parsed?.units ?? {};
   const lenUnit  = prettyUnit(units.length);
+  const lenSuffix = unitSuffix(units.length || 'mm');
   const tempUnit = prettyUnit(units.temperature);
   const pressUnit = prettyUnit(units.pressure);
   const densUnit = prettyUnit(units.density);
