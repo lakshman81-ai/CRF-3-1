@@ -45,26 +45,26 @@ export function renderPropertyPanel(element) {
         {
             title: 'Process',
             fields: [
-                { label: 'T1', value: `${element.T1 || 'N/A'}${tUnit}` },
-                { label: 'T2', value: `${element.T2 || 'N/A'}${tUnit}` },
-                { label: 'T3', value: `${element.T3 || 'N/A'}${tUnit}` },
-                { label: 'P1', value: `${element.P1 || 'N/A'}${pUnit}` },
-                { label: 'P2', value: `${element.P2 || 'N/A'}${pUnit}` },
-                { label: 'Fluid Density', value: element.fluidDensity || 'N/A' },
+                { label: 'T1', value: `${element.T1 ?? 'N/A'}${tUnit}` },
+                { label: 'T2', value: `${element.T2 ?? 'N/A'}${tUnit}` },
+                { label: 'T3', value: `${element.T3 ?? 'N/A'}${tUnit}` },
+                { label: 'P1', value: `${element.P1 ?? 'N/A'}${pUnit}` },
+                { label: 'P2', value: `${element.P2 ?? 'N/A'}${pUnit}` },
+                { label: 'Fluid Density', value: element.fluidDensity ?? 'N/A' },
             ]
         },
         {
             title: 'Material',
             fields: [
                 { label: 'Material', value: element.material || 'CS' },
-                { label: 'Density', value: element.density || 'N/A' },
+                { label: 'Density', value: element.density ?? 'N/A' },
             ]
         },
         {
             title: 'Insulation',
             fields: [
-                { label: 'Thickness', value: `${element.insulThickness || 0}${dUnit}` },
-                { label: 'Density', value: element.insulDensity || 'N/A' },
+                { label: 'Thickness', value: `${element.insulThickness ?? 0}${dUnit}` },
+                { label: 'Density', value: element.insulDensity ?? 'N/A' },
             ]
         }
     ];
@@ -140,7 +140,7 @@ export function showViewportChip(element, x, y) {
             <span style="color:${muted};">Mat:</span> <span>${element.material || 'CS'}</span>
         </div>
         <div style="display:flex; justify-content: space-between;">
-            <span style="color:${muted};">T1/P1:</span> <span>${element.T1}${tUnit} / ${element.P1}${pUnit}</span>
+            <span style="color:${muted};">T1/P1:</span> <span>${element.T1 ?? 'N/A'}${tUnit} / ${element.P1 ?? 'N/A'}${pUnit}</span>
         </div>
     `;
 

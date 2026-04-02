@@ -96,6 +96,30 @@ export function createPipeLine(a, b, color, lineWidth = 3, renderer) {
   return line;
 }
 
+export function createSolidCylinder(startVec, endVec, radius, color) {
+    const diff = new THREE.Vector3().subVectors(endVec, startVec);
+    const length = diff.length();
+    if (length < 0.1) return null;
+
+    const mid = new THREE.Vector3().addVectors(startVec, endVec).multiplyScalar(0.5);
+    const axis = new THREE.Vector3(0, 1, 0);
+    const quat = new THREE.Quaternion().setFromUnitVectors(axis, diff.clone().normalize());
+
+    const geo = new THREE.CylinderGeometry(radius, radius, length, 12);
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(mid);
+    mesh.quaternion.copy(quat);
+    return mesh;
+}
+
+export function createSolidBend(startPt, midPt, endPt, radius, color, segments = 8) {
+    const curve = new THREE.CatmullRomCurve3([startPt, midPt, endPt]);
+    const geo = new THREE.TubeGeometry(curve, segments, radius, 8, false);
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
+    return new THREE.Mesh(geo, mat);
+}
+
 export function createBendArc(startPt, midPt, endPt, color, lineWidth = 3, renderer, segments = 12) {
   const curve = new THREE.CatmullRomCurve3([startPt, midPt, endPt]);
   const pts = curve.getPoints(segments);

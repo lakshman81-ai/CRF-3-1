@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
-import { createPipeLine, createBendArc, colorForMode, OD_COLORS, toThree, generateDiscreteColor } from './pipe-geometry.js';
+import { createPipeLine, createBendArc, createSolidCylinder, createSolidBend, colorForMode, OD_COLORS, toThree, generateDiscreteColor, SCALE } from './pipe-geometry.js';
 import { createForceArrow } from './symbols.js';
 import { createNodeLabel, createSegmentLabel, computeStretches } from './labels.js';
 import { materialFromDensity } from '../utils/formatter.js';
@@ -60,6 +60,10 @@ export class IsometricRenderer {
     const aspect = w / h;
     const frustum = 5000;
 
+    this._isOrtho = state.viewerSettings.projection === 'orthographic';
+
+    const frustum = 5000;
+
     this._orthoCamera = new THREE.OrthographicCamera(
       -frustum * aspect, frustum * aspect,
       frustum, -frustum,
@@ -93,6 +97,7 @@ export class IsometricRenderer {
     this._container.style.position = 'relative';
     this._container.appendChild(this._css2d.domElement);
 
+    // Initial controls setup
     this._controls = new OrbitControls(this._camera, this._renderer.domElement);
     this._controls.enableDamping = state.viewerSettings.enableDamping ?? true;
     this._controls.dampingFactor = state.viewerSettings.dampingFactor || 0.08;
@@ -100,14 +105,37 @@ export class IsometricRenderer {
     this._controls.panSpeed = state.viewerSettings.panSpeed || 1.0;
     this._controls.zoomSpeed = state.viewerSettings.zoomSpeed || 1.0;
 
-    // Reverse logic if inverted
     if (state.viewerSettings.invertX) this._controls.rotateSpeed *= -1;
-    if (state.viewerSettings.invertY) this._controls.rotateSpeed *= -1; // Note: OrbitControls doesn't split X/Y natively easily without modifying source, but we apply to general rotation.
+    if (state.viewerSettings.invertY) this._controls.rotateSpeed *= -1;
 
-    this._controls.addEventListener('change', () => this._onCameraChange());
+    // Use shared module
+    import('./camera-utils.js').then(({ setupControls }) => {
+        this._controls = setupControls(this._camera, this._renderer.domElement, () => this._pipeGroup);
+        this._controls.enableDamping = state.viewerSettings.enableDamping ?? true;
+        this._controls.dampingFactor = state.viewerSettings.dampingFactor || 0.08;
+        this._controls.rotateSpeed = state.viewerSettings.rotateSpeed || 1.0;
+        this._controls.panSpeed = state.viewerSettings.panSpeed || 1.0;
+        this._controls.zoomSpeed = state.viewerSettings.zoomSpeed || 1.0;
+        if (state.viewerSettings.invertX) this._controls.rotateSpeed *= -1;
+        if (state.viewerSettings.invertY) this._controls.rotateSpeed *= -1;
+        this._controls.addEventListener('change', () => this._onCameraChange());
+
+        // Ensure section box gets the updated controls
+        if (this._sectionBox) this._sectionBox.controls = this._controls;
+    });
+
+    // Set up lights for 3D Theme
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    const pointLight = new THREE.PointLight(0xffffff, 0.8);
+    pointLight.position.set(2000, 4000, 2000);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    directionalLight.position.set(-1000, 5000, -2000);
+
+    this._lightsGroup = new THREE.Group();
+    this._lightsGroup.add(ambientLight, pointLight, directionalLight);
 
     this._sceneRoot = new THREE.Group();
-    this._sceneRoot.add(this._pipeGroup, this._symbolGroup, this._labelGroup);
+    this._sceneRoot.add(this._pipeGroup, this._symbolGroup, this._labelGroup, this._lightsGroup);
     this._scene.add(this._sceneRoot);
 
     const ro = new ResizeObserver(() => this._onResize());
@@ -160,7 +188,7 @@ export class IsometricRenderer {
       }
   }
 
-  _applyTheme() {
+  _applyTheme(noRebuild = false) {
       const is3D = state.viewerSettings.themePreset === '3DTheme';
 
       const THEMES = {
@@ -171,20 +199,12 @@ export class IsometricRenderer {
       const theme = is3D ? THEMES['3DTheme'] : THEMES.IsoTheme;
       this._scene.background = new THREE.Color(state.viewerSettings.backgroundColor || theme.bg);
 
-      // Update materials based on theme
-      this._pipeGroup.traverse(child => {
-          if (child.material && child.material.isLineMaterial) {
-              child.material.linewidth = theme.pipeSize;
+      this._lightsGroup.visible = is3D;
 
-              if (is3D && child.userData && child.userData.element) {
-                   // Light pipe colors for dark theme if not overriden by legend
-                   if (state.legendField === 'pipelineRef') {
-                       child.material.color.setHex(0xcbd5e1); // PCF Studio LIGHT slate
-                   }
-              }
-              child.material.needsUpdate = true;
-          }
-      });
+      if (!noRebuild) {
+          // Fully rebuild if toggling between line art and solid 3D representation
+          this.rebuild();
+      }
   }
 
   _applyAxisConvention() {
@@ -597,25 +617,17 @@ export class IsometricRenderer {
           return;
       }
 
-      const box = new THREE.Box3();
-      if (this._selectedObject.geometry) {
-          if (!this._selectedObject.geometry.boundingBox) this._selectedObject.geometry.computeBoundingBox();
-          box.copy(this._selectedObject.geometry.boundingBox).applyMatrix4(this._selectedObject.matrixWorld);
-      } else {
-          box.setFromObject(this._selectedObject);
-      }
+      import('./camera-utils.js').then(({ fitCamera }) => {
+          // fitCamera expects any Object3D. We can just pass the selected object directly
+          // so it computes the Box3 correctly using world matrix (including sceneRoot rotations).
+          fitCamera(this._camera, this._controls, this._selectedObject, this._container.clientWidth, this._container.clientHeight);
+      });
+  }
 
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z, 100);
-
-      const dir = this._camera.position.clone().sub(this._controls.target).normalize();
-      const pos = center.clone().add(dir.multiplyScalar(maxDim * 3));
-
-      this._camera.position.copy(pos);
-      this._controls.target.copy(center);
-      this._camera.lookAt(center);
-      this._controls.update();
+  resetView() {
+      import('./camera-utils.js').then(({ fitCamera }) => {
+          fitCamera(this._camera, this._controls, this._pipeGroup, this._container.clientWidth, this._container.clientHeight);
+      });
   }
 
   _isolateSelection() {
@@ -942,26 +954,24 @@ export class IsometricRenderer {
     const aspect = w / h;
 
     if (this._isOrtho) {
-        let frustum = 5000;
+        let maxDim = 5000;
         if (this._pipeGroup) {
           const box = new THREE.Box3().setFromObject(this._pipeGroup);
           if (!box.isEmpty()) {
              const size = box.getSize(new THREE.Vector3());
-             frustum = Math.max(size.x, size.y, size.z) * 0.8;
+             maxDim = Math.max(size.x, size.y, size.z, 1);
           }
         }
-        this._orthoCamera.left   = -frustum * aspect;
-        this._orthoCamera.right  =  frustum * aspect;
-        this._orthoCamera.top    =  frustum;
-        this._orthoCamera.bottom = -frustum;
-        this._orthoCamera.updateProjectionMatrix();
+        import('./camera-utils.js').then(({ resizeCamera }) => {
+            resizeCamera(this._orthoCamera, w, h, maxDim);
+        });
     } else {
         this._perspCamera.aspect = aspect;
         this._perspCamera.updateProjectionMatrix();
     }
 
     this._renderer.setSize(w, h);
-    this._css2d.setSize(w, h);
+    if (this._css2d) this._css2d.setSize(w, h);
   }
 
   toggleProjection() {
@@ -1041,7 +1051,7 @@ export class IsometricRenderer {
     this._clearGroup(this._labelGroup);
 
     this._applyAxisConvention();
-    this._applyTheme();
+    this._applyTheme(true); // Don't rebuild recursively
     this._labelGroup.visible = !!state.viewerSettings.showLabels;
 
     if (this._sectionBox && this._sectionBox.enabled) {
@@ -1068,22 +1078,47 @@ export class IsometricRenderer {
     const heatField = isHeatMap ? legendField.split(':')[1] : null;
     const range = heatField ? this._computeRange(elements, heatField) : { min: 0, max: 100 };
 
+    const is3D = state.viewerSettings.themePreset === '3DTheme';
+
     for (const el of elements) {
       if (!el.fromPos || !el.toPos) continue;
 
       const a = toThree(el.fromPos);
       const b = toThree(el.toPos);
-      const col = colorForMode(el, legendField, range);
+      let col = colorForMode(el, legendField, range);
 
-      if (el.isBend || el.bend) {
-        const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
-        const arc = createBendArc(a, mid, b, col, 3, this._renderer);
-        arc.userData.element = el;
-        this._pipeGroup.add(arc);
+      if (is3D && legendField === 'pipelineRef') {
+          col = 0xcbd5e1; // Light industrial pipe colour
+      }
+
+      if (is3D) {
+          const radius = Math.max((el.od || 100) * SCALE * 0.5, 0.05); // at least 50mm radius
+          if (el.isBend || el.bend) {
+             const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
+             const arc = createSolidBend(a, mid, b, radius, col);
+             if (arc) {
+                 arc.userData.element = el;
+                 this._pipeGroup.add(arc);
+             }
+          } else {
+             const seg = createSolidCylinder(a, b, radius, col);
+             if (seg) {
+                 seg.userData.element = el;
+                 this._pipeGroup.add(seg);
+             }
+          }
       } else {
-        const seg = createPipeLine(a, b, col, 3, this._renderer);
-        seg.userData.element = el;
-        this._pipeGroup.add(seg);
+          // IsoTheme (Line art)
+          if (el.isBend || el.bend) {
+            const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
+            const arc = createBendArc(a, mid, b, col, 3, this._renderer);
+            arc.userData.element = el;
+            this._pipeGroup.add(arc);
+          } else {
+            const seg = createPipeLine(a, b, col, 3, this._renderer);
+            seg.userData.element = el;
+            this._pipeGroup.add(seg);
+          }
       }
     }
 
@@ -1267,31 +1302,8 @@ export class IsometricRenderer {
   }
 
   _fitToScene() {
-    const box = new THREE.Box3().setFromObject(this._pipeGroup);
-    if (box.isEmpty()) return;
-
-    const center = new THREE.Vector3();
-    const size   = new THREE.Vector3();
-    box.getCenter(center);
-    box.getSize(size);
-
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const frustum = maxDim * 0.65;
-    const aspect  = this._container.clientWidth / this._container.clientHeight;
-
-    this._camera.left   = -frustum * aspect;
-    this._camera.right  =  frustum * aspect;
-    this._camera.top    =  frustum;
-    this._camera.bottom = -frustum;
-    this._camera.updateProjectionMatrix();
-
-    this._controls.target.copy(center);
-    const D = maxDim * 1.5;
-    this._camera.position.copy(center).add(new THREE.Vector3(D, D, D).normalize().multiplyScalar(D));
-    this._controls.update();
+      this.resetView();
   }
-
-  resetView() { this._fitToScene(); }
 
   toDataURL() {
     this._renderer.render(this._scene, this._camera);
