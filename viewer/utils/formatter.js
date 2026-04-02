@@ -58,7 +58,6 @@ export function unitSuffix(unit) {
   const label = prettyUnit(unit);
   return label ? ` (${label})` : '';
 }
-}
 
 /**
  * Format a number with a unit suffix.
