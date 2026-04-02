@@ -5,123 +5,167 @@
 
 import * as THREE from 'three';
 import { toThree, SCALE } from './pipe-geometry.js';
+import { state } from '../core/state.js';
 
-const MAT_ANCHOR  = new THREE.MeshBasicMaterial({ color: 0xcc2200 });
-const MAT_GUIDE   = new THREE.MeshBasicMaterial({ color: 0x888888 });
-const MAT_LOAD    = new THREE.MeshBasicMaterial({ color: 0xe0a000 });
+const MAT_LOAD = new THREE.MeshBasicMaterial({ color: 0xe0a000 });
 
-/**
- * Anchor symbol — solid red box at node position.
- * @param {object} pos  {x, y, z} in mm
- */
-// Helper to create a Box mesh (wireframe option for pencil style)
-function createBox(pos, hw, material, wireframe = false) {
-  const geo = new THREE.BoxGeometry(hw, hw, hw);
-  const mesh = new THREE.Mesh(geo, material);
-  if (wireframe) {
-    const edges = new THREE.EdgesGeometry(geo);
-    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: material.color }));
-    mesh.add(line);
-    mesh.material.transparent = true;
-    mesh.material.opacity = 0.2;
-  }
-  mesh.position.copy(pos);
-  return mesh;
-}
+// Support symbol materials
+const COLOR_NORMAL = 0x00C853; // Green A700
+const MAT_SUPPORT = new THREE.MeshStandardMaterial({
+    color: COLOR_NORMAL,
+    roughness: 0.4,
+    metalness: 0.1
+});
 
-// Helper to create a Disc (cylinder) mesh
-function createDisc(pos, normal, outerRadius, thickness, material) {
-  const geo = new THREE.CylinderGeometry(outerRadius, outerRadius, thickness, 16);
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.position.copy(pos);
-  const axis = new THREE.Vector3(0, 1, 0);
-  mesh.quaternion.setFromUnitVectors(axis, normal.clone().normalize());
-  return mesh;
-}
-
-// Helper to create a cylinder
-function createCylinder(start, end, radius, material) {
-  const dir = new THREE.Vector3().subVectors(end, start);
-  const len = dir.length();
-  if (len === 0) return null;
-  const geo = new THREE.CylinderGeometry(radius, radius, len, 8);
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.position.copy(start).add(dir.multiplyScalar(0.5));
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-
-  // Also add wireframe for pencil style
-  const edges = new THREE.EdgesGeometry(geo);
-  const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: material.color }));
-  mesh.add(line);
-  mesh.material.transparent = true;
-  mesh.material.opacity = 0.2;
-
-  return mesh;
-}
-
-export function createAnchorSymbol(pos) {
-  const p = toThree(pos);
-  const group = new THREE.Group();
-
-  const r = 0.015; // 15mm scaled base radius
-  const strapR = r * 1.1;
-  const baseW = r * 3;
-
-  // Clamping strap (oversized thin disc crossing pipe axis)
-  const strap = createDisc(p, new THREE.Vector3(1, 0, 0), strapR, r * 0.4, MAT_ANCHOR);
-  group.add(strap);
-
-  // Base block (anchor to ground/structure)
-  const basePos = p.clone().add(new THREE.Vector3(0, -r * 1.5, 0));
-  const base = createBox(basePos, baseW, MAT_ANCHOR, true);
-  group.add(base);
-
-  // Vertical legs connecting strap to base
-  const legLeft = createCylinder(
-      p.clone().add(new THREE.Vector3(-r, 0, 0)),
-      basePos.clone().add(new THREE.Vector3(-r, r * 0.5, 0)),
-      r * 0.2,
-      MAT_ANCHOR
-  );
-  if (legLeft) group.add(legLeft);
-
-  const legRight = createCylinder(
-      p.clone().add(new THREE.Vector3(r, 0, 0)),
-      basePos.clone().add(new THREE.Vector3(r, r * 0.5, 0)),
-      r * 0.2,
-      MAT_ANCHOR
-  );
-  if (legRight) group.add(legRight);
-
-  return group;
-}
+const MAT_SPRING = new THREE.LineDashedMaterial({
+    color: COLOR_NORMAL,
+    linewidth: 2,
+    scale: 1,
+    dashSize: 3,
+    gapSize: 3,
+});
 
 /**
- * Guide symbol — pencil style guide based on PCF Fixer logic
- * @param {object} pos  {x, y, z} in mm
+ * Helper to build lateral and vertical arrows.
  */
-export function createGuideSymbol(pos) {
-  const p = toThree(pos);
-  const group = new THREE.Group();
+function makeArrow(direction, offset, od, material) {
+    const arrowLen = 1.5 * od;
+    const shaftR   = 0.075 * od;
+    const headLen  = 0.4 * od;
+    const headR    = 0.175 * od;
+    const shaftLen = arrowLen - headLen;
 
-  const r = 0.015;
-  const loopR = r * 1.2;
-  const loopThickness = r * 0.15;
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(shaftR, shaftR, shaftLen, 8),
+      material
+    );
+    const head = new THREE.Mesh(
+      new THREE.ConeGeometry(headR, headLen, 8),
+      material
+    );
 
-  // Guide loop (thin vertical disc)
-  const loop = createDisc(p, new THREE.Vector3(1, 0, 0), loopR, loopThickness, MAT_GUIDE);
-  group.add(loop);
+    const arrowGroup = new THREE.Group();
+    arrowGroup.add(shaft);
+    arrowGroup.add(head);
 
-  // Slide pad
-  const padPos = p.clone().add(new THREE.Vector3(0, -r, 0));
-  const pad = createBox(padPos, r * 1.5, MAT_GUIDE, true);
-  if (pad) {
-      pad.scale.set(1, 0.2, 1);
-      group.add(pad);
-  }
+    shaft.position.copy(direction).multiplyScalar(offset + shaftLen / 2);
+    head.position.copy(direction).multiplyScalar(offset + shaftLen + headLen / 2);
 
-  return group;
+    // Default Cylinder/Cone points up (+Y). Rotate to direction.
+    const up = new THREE.Vector3(0, 1, 0);
+    // Handle anti-parallel case
+    if (up.distanceTo(direction) < 0.001) {
+        // already aligned
+    } else if (up.distanceTo(direction.clone().negate()) < 0.001) {
+        shaft.rotateX(Math.PI);
+        head.rotateX(Math.PI);
+    } else {
+        const quat = new THREE.Quaternion().setFromUnitVectors(up, direction);
+        shaft.quaternion.copy(quat);
+        head.quaternion.copy(quat);
+    }
+
+    return arrowGroup;
 }
+
+export function classifySupport(supportName, supportKeywords) {
+    const searchStr = `${supportName || ''} ${supportKeywords || ''}`.toUpperCase();
+
+    if (/CA\d+/.test(searchStr) || searchStr.includes('ANCH') || searchStr.includes('ANCHOR')) {
+        return 'ANCHOR';
+    }
+    if (searchStr.includes('GUI') || searchStr.includes('GUIDE')) {
+        return 'GUIDE';
+    }
+    if (searchStr.includes('STOP')) {
+        return 'STOP';
+    }
+    if (searchStr.includes('SPRING') || searchStr.includes('HANGER')) {
+        return 'SPRING';
+    }
+    if (searchStr.includes('RIGID')) {
+        return 'RIGID';
+    }
+
+    return 'UNKNOWN';
+}
+
+export function createSupportSymbol(pos, type, pipeAxis, odInMM) {
+    const group = new THREE.Group();
+    const p = toThree(pos);
+    group.position.copy(p);
+
+    // Apply global scale
+    const scale = state.viewerSettings.restraintSymbolScale || 1.0;
+    group.scale.set(scale, scale, scale);
+
+    // Scale OD to scene units. Minimum viable OD for symbol proportion if missing.
+    let od = (odInMM || 100) * SCALE;
+
+    // Fallback axis if none provided
+    const axis = pipeAxis ? pipeAxis.clone().normalize() : new THREE.Vector3(1, 0, 0);
+
+    // Up axis based on convention. If scene is rotated, World Up is Three's Y.
+    const isZup = state.viewerSettings.axisConvention === 'Z-up';
+    const upAxis = isZup ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 1, 0); // World Y is up in both due to scene rotation
+
+    // Lateral direction
+    let lateral = new THREE.Vector3().crossVectors(axis, upAxis);
+    if (lateral.length() < 0.01) {
+        // pipe is vertical, pick arbitrary lateral
+        lateral.set(1, 0, 0);
+    }
+    lateral.normalize();
+
+    const downDir = upAxis.clone().negate();
+
+    if (type === 'GUIDE' || type === 'ANCHOR') {
+        group.add(makeArrow(lateral.clone().negate(), od / 2, od, MAT_SUPPORT));
+        group.add(makeArrow(lateral.clone(), od / 2, od, MAT_SUPPORT));
+        group.add(makeArrow(downDir, od / 2, od, MAT_SUPPORT));
+    }
+    else if (type === 'STOP') {
+        group.add(makeArrow(lateral.clone().negate(), od / 2, od, MAT_SUPPORT));
+        group.add(makeArrow(lateral.clone(), od / 2, od, MAT_SUPPORT));
+    }
+    else if (type === 'SPRING') {
+        // Vertical dashed arrow
+        const arrowLen = 1.5 * od;
+        const headLen = 0.4 * od;
+        const shaftLen = arrowLen - headLen;
+
+        const pts = [];
+        pts.push(downDir.clone().multiplyScalar(od / 2));
+        pts.push(downDir.clone().multiplyScalar(od / 2 + shaftLen));
+        const geo = new THREE.BufferGeometry().setFromPoints(pts);
+        const line = new THREE.Line(geo, MAT_SPRING);
+        line.computeLineDistances();
+        group.add(line);
+
+        const head = new THREE.Mesh(new THREE.ConeGeometry(0.175 * od, headLen, 8), MAT_SUPPORT);
+        head.position.copy(downDir).multiplyScalar(od / 2 + shaftLen + headLen / 2);
+        if (downDir.y < 0) head.rotateX(Math.PI);
+        group.add(head);
+    }
+    else if (type === 'RIGID') {
+        // Cross symbol in pipe plane
+        const rLen = od * 1.2;
+        const m1 = new THREE.Mesh(new THREE.CylinderGeometry(0.05*od, 0.05*od, rLen*2), MAT_SUPPORT);
+        const m2 = new THREE.Mesh(new THREE.CylinderGeometry(0.05*od, 0.05*od, rLen*2), MAT_SUPPORT);
+        m1.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), lateral.clone().add(upAxis).normalize());
+        m2.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), lateral.clone().sub(upAxis).normalize());
+        group.add(m1);
+        group.add(m2);
+    }
+    else {
+        // UNKNOWN / Fallback
+        group.add(makeArrow(downDir, od / 2, od, MAT_SUPPORT));
+    }
+
+    return group;
+}
+
+// Kept for backward compatibility if needed, but IsometricRenderer should now use createSupportSymbol
 
 /**
  * Applied force arrow — yellow ArrowHelper pointing in force direction.

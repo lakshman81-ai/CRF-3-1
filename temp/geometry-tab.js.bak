@@ -1,0 +1,224 @@
+﻿/**
+ * geometry-tab.js — Wires the geometry tab UI controls to IsometricRenderer.
+ */
+
+import { state } from '../core/state.js';
+import { unitSuffix } from '../utils/formatter.js';
+import { emit, on } from '../core/event-bus.js';
+import { renderLogPanel, destroyLogPanel } from './log-panel.js';
+
+// Inline legend colours — avoids static Three.js import at module load time
+const OD_COLORS = [
+  { od: 406.4,   color: 0xe07020, label: 'Ã˜406.4 mm' },
+  { od: 323.85,  color: 0x1a6ec7, label: 'Ã˜323.85 mm' },
+  { od: 168.275, color: 0x1a9c7a, label: 'Ã˜168.275 mm' },
+];
+
+let _renderer = null;
+let _initialized = false;
+
+/**
+ * Render the geometry tab shell (canvas + controls).
+ * The IsometricRenderer is created lazily on first render.
+ */
+export async function renderGeometry(container) {
+  container.innerHTML = `
+    <div class="geo-tab" id="section-geometry">
+      <div class="geo-controls">
+        <!-- Removed internal file loader, rely on universal drag-drop -->
+        <button class="btn-secondary" id="geo-reset-btn">⟳ Reset View</button>
+        <button class="btn-secondary" id="geo-center-btn" title="Auto Center">⌖</button>
+        <button class="btn-secondary" id="geo-proj-btn" title="Toggle Orthographic / Perspective">📽</button>
+
+        <span class="control-sep"></span>
+
+        <label class="control-label" style="margin-left:auto;">
+          Legend:
+          <select id="legend-select">
+            <option value="pipelineRef">Legends</option>
+            <option value="material">Material</option>
+            <option value="T1">T1${unitSuffix(state.parsed?.units?.temperature)}</option>
+            <option value="T2">T2${unitSuffix(state.parsed?.units?.temperature)}</option>
+            <option value="P1">P1${unitSuffix(state.parsed?.units?.pressure)}</option>
+          </select>
+        </label>
+
+        <label class="control-label">
+          Heat Map:
+          <select id="heatmap-select">
+            <option value="None">None</option>
+            <option value="HeatMap:T1">Heat Map: T1</option>
+            <option value="HeatMap:T2">Heat Map: T2</option>
+            <option value="HeatMap:P1">Heat Map: P1</option>
+          </select>
+        </label>
+
+        <button class="btn-secondary" id="pull-data-btn">Pull from data table</button>
+
+        <label class="control-label" style="width:160px;">
+          Max label per item:
+          <input type="number" id="max-legend-labels" min="1" max="20" style="width:40px;" value="${state.geoToggles.maxLegendLabels ?? 3}">
+        </label>
+
+        <label class="toggle-inline">
+          <input type="checkbox" id="tog-labels" ${state.geoToggles.nodeLabels ? 'checked' : ''}> Node Labels
+        </label>
+        <label class="toggle-inline">
+          <input type="checkbox" id="tog-supports" ${state.geoToggles.supports ? 'checked' : ''}> Supports
+        </label>
+      </div>
+
+      <div class="geo-body">
+        <div class="canvas-wrap" id="canvas-wrap">
+          <div class="canvas-placeholder" id="canvas-placeholder">
+            Load an .ACCDB file or click "Use Sample" to render the isometric model
+          </div>
+        </div>
+
+        <div class="geo-legend-panel" id="legend-panel">
+          <div class="legend-title">OD Legend</div>
+          ${OD_COLORS.map(c => `
+            <div class="legend-row">
+              <span class="legend-swatch" style="background:#${c.color.toString(16).padStart(6,'0')}"></span>
+              <span>${c.label}</span>
+            </div>
+          `).join('')}
+          <div class="legend-row"><span class="legend-swatch swatch-anchor"></span><span>Anchor ■</span></div>
+          <div class="legend-row"><span class="legend-swatch swatch-guide"></span><span>Guide ○</span></div>
+          <div class="legend-row"><span class="legend-swatch swatch-load"></span><span>Applied Load ↓</span></div>
+        </div>
+      </div>
+
+      <div class="geo-status" id="geo-status">
+        <span id="geo-status-text">Ready</span>
+        <span id="geo-version-text" style="opacity:0.6;">ver.01-01-24 12.00</span>
+      </div>
+      <div id="log-panel-container"></div>
+    </div>
+  `;
+
+  _wireControls(container);
+
+  const logContainer = container.querySelector('#log-panel-container');
+  if (logContainer) {
+      renderLogPanel(logContainer);
+  }
+
+  // Always init renderer, so Axis Gizmo is ready, even if no data yet.
+  await _ensureRenderer(container);
+
+  if (state.parsed) {
+    _setStatus(container, `${state.parsed?.elements?.length ?? 0} elements · ${Object.keys(state.parsed?.nodes ?? {}).length} nodes`);
+    _renderer?.rebuild();
+  }
+
+  on('parse-complete', async () => {
+    await _ensureRenderer(container);
+    _setStatus(container, `${state.parsed?.elements?.length ?? 0} elements · ${Object.keys(state.parsed?.nodes ?? {}).length} nodes`);
+    _renderer?.rebuild();
+  });
+}
+
+async function _ensureRenderer(container) {
+  const wrap = container.querySelector('#canvas-wrap');
+  const placeholder = container.querySelector('#canvas-placeholder');
+  if (!wrap) return;
+
+  // Remove placeholder
+  if (placeholder) placeholder.remove();
+
+  if (_renderer && _initialized) {
+    // If returning to the tab, re-parent the existing renderer DOM elements
+    if (_renderer._renderer && _renderer._renderer.domElement) {
+        wrap.appendChild(_renderer._renderer.domElement);
+    }
+    if (_renderer._css2d && _renderer._css2d.domElement) {
+        wrap.appendChild(_renderer._css2d.domElement);
+    }
+    if (_renderer._navOverlayEl) {
+      wrap.appendChild(_renderer._navOverlayEl);
+    }
+    if (_renderer._viewCubeEl) {
+      wrap.appendChild(_renderer._viewCubeEl);
+    }
+    if (_renderer._gizmoEl) {
+      wrap.appendChild(_renderer._gizmoEl);
+    }
+    _renderer._onResize(); // Adjust size
+    return;
+  }
+
+  // Lazy import to avoid loading Three.js until needed
+  const { IsometricRenderer } = await import('../geometry/isometric-renderer.js');
+  _renderer = new IsometricRenderer(wrap);
+  _initialized = true;
+}
+
+function _wireControls(container) {
+
+  container.querySelector('#geo-reset-btn')?.addEventListener('click', () => {
+    _renderer?.resetView();
+  });
+
+  container.querySelector('#geo-center-btn')?.addEventListener('click', () => {
+    _renderer?.resetView();
+  });
+
+  container.querySelector('#geo-proj-btn')?.addEventListener('click', () => {
+    _renderer?.toggleProjection();
+  });
+
+  container.querySelector('#legend-select')?.addEventListener('change', e => {
+    state.legendField = e.target.value;
+    const heatMapSelect = container.querySelector('#heatmap-select');
+    if (heatMapSelect) heatMapSelect.value = 'None';
+    emit('legend-changed', state.legendField);
+  });
+
+  container.querySelector('#heatmap-select')?.addEventListener('change', e => {
+    if (e.target.value === 'None') {
+       const legendSelect = container.querySelector('#legend-select');
+       state.legendField = legendSelect ? legendSelect.value : 'pipelineRef';
+    } else {
+       state.legendField = e.target.value;
+    }
+    emit('legend-changed', state.legendField);
+  });
+
+  container.querySelector('#pull-data-btn')?.addEventListener('click', () => {
+    if (state.parsed) {
+        emit('parse-complete', state.parsed);
+    } else {
+        _renderer?.rebuild();
+    }
+  });
+
+  container.querySelector('#tog-labels')?.addEventListener('change', e => {
+    state.geoToggles.nodeLabels = e.target.checked;
+    emit('geo-toggle', state.geoToggles);
+  });
+
+  container.querySelector('#tog-supports')?.addEventListener('change', e => {
+    state.geoToggles.supports = e.target.checked;
+    emit('geo-toggle', state.geoToggles);
+  });
+
+  container.querySelector('#max-legend-labels')?.addEventListener('change', e => {
+    let val = parseInt(e.target.value, 10);
+    if (isNaN(val) || val < 1) val = 3;
+    e.target.value = val;
+    state.geoToggles.maxLegendLabels = val;
+    emit('legend-changed', state.legendField);
+  });
+}
+
+function _setStatus(container, msg) {
+  const el = container.querySelector('#geo-status-text');
+  if (el) el.textContent = msg;
+
+  const d = new Date();
+  const dateStr = `${d.getDate().toString().padStart(2, '0')}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getFullYear().toString().substr(-2)}`;
+  const timeStr = `${d.getHours().toString().padStart(2, '0')}.${d.getMinutes().toString().padStart(2, '0')}`;
+  const vEl = container.querySelector('#geo-version-text');
+  if (vEl) vEl.textContent = `ver.${dateStr} ${timeStr}`;
+}

@@ -7,6 +7,7 @@
 
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { toThree } from './pipe-geometry.js';
+import { state } from '../core/state.js';
 
 /**
  * Create a node number label.
@@ -46,20 +47,26 @@ export function createSegmentLabel(text, midPos) {
   const div = document.createElement('div');
   div.className = 'seg-label';
   div.textContent = text;
+
+  const fontSize = state.viewerSettings.labelFontSize || 12;
+  const bgStyle = state.viewerSettings.labelBackground ? 'background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.1);' : 'background: transparent; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
+
   div.style.cssText = `
-    font: 400 9px "Arial", sans-serif;
-    color: #555;
-    background: rgba(255,255,255,0.8);
-    padding: 1px 4px;
-    border-radius: 2px;
+    font: 500 ${fontSize}px "Arial", sans-serif;
+    color: #333;
+    ${bgStyle}
+    padding: 2px 5px;
+    border-radius: 3px;
     pointer-events: none;
     white-space: nowrap;
+    opacity: ${state.viewerSettings.showLabels ? 1 : 0};
   `;
 
   const obj = new CSS2DObject(div);
   const p = toThree(midPos);
   obj.position.copy(p);
   obj.userData.type = 'seg-label';
+  obj.userData.text = text;
   return obj;
 }
 
@@ -133,7 +140,7 @@ export function computeStretches(elements, legendField, materialFromDensity) {
           y: (current.startPos.y + current.endPos.y) / 2,
           z: (current.startPos.z + current.endPos.z) / 2,
         };
-        stretches.push({ midPos: mid, text: current.text });
+        stretches.push({ elements: current.elements, midPos: mid, text: current.text });
       }
       current = { elements: [el], startPos: el.fromPos, endPos: el.toPos, text, dirKey: dk };
       currentDirKey = dk;
@@ -147,8 +154,46 @@ export function computeStretches(elements, legendField, materialFromDensity) {
       y: (current.startPos.y + current.endPos.y) / 2,
       z: (current.startPos.z + current.endPos.z) / 2,
     };
-    stretches.push({ midPos: mid, text: current.text });
+    stretches.push({ elements: current.elements, midPos: mid, text: current.text });
   }
 
-  return stretches;
+  return filterStretchesByDensity(stretches);
+}
+
+function filterStretchesByDensity(stretches) {
+    const mode = state.viewerSettings.labelMode || 'smart-density';
+    if (mode === 'none' || !state.viewerSettings.showLabels) return [];
+    if (mode === 'all') return stretches;
+
+    // Smart density logic: deduplicate
+    const kept = [];
+    const textCounts = new Map();
+
+    // Sort stretches by length so longer stretches get priority for labels
+    const sorted = [...stretches].sort((a, b) => b.elements.length - a.elements.length);
+
+    for (const s of sorted) {
+        if (!s.text) continue;
+
+        const count = textCounts.get(s.text) || 0;
+        let keep = false;
+
+        if (mode === 'run-only') {
+            // Keep strictly one label per unique text per large run area
+            // simplified here to just limit max labels per text
+            if (count < 1) keep = true;
+        } else if (mode === 'smart-density') {
+            const density = state.viewerSettings.labelDensity !== undefined ? state.viewerSettings.labelDensity : 0.5;
+            // Higher density allows more repeats. 1.0 allows all.
+            const maxAllowed = Math.max(1, Math.floor(density * 5));
+            if (count < maxAllowed) keep = true;
+        }
+
+        if (keep) {
+            kept.push(s);
+            textCounts.set(s.text, count + 1);
+        }
+    }
+
+    return kept;
 }
