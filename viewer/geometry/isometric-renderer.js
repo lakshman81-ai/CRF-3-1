@@ -699,14 +699,10 @@ export class IsometricRenderer {
       });
   }
   _buildViewCube() {
-      // Replaced with dedicated inset viewcube renderer in future refactoring if needed.
-      // For now, implement simple CSS3D View Cube that respects axis convention
-      const size = state.viewerSettings.viewCubeSize || 120;
       let cube = document.getElementById('pcf-view-cube');
-      if (cube) {
-          cube.remove();
-      }
+      if (cube) cube.remove();
 
+      const size = 90;
       const posStyles = state.viewerSettings.viewCubePosition === 'top-left' ? 'top:12px;left:12px;' : 'top:12px;right:12px;';
 
       cube = document.createElement('div');
@@ -717,7 +713,6 @@ export class IsometricRenderer {
           opacity: ${state.viewerSettings.viewCubeOpacity || 0.85};
           transition: opacity 0.2s;
       `;
-
       cube.addEventListener('mouseenter', () => cube.style.opacity = '1');
       cube.addEventListener('mouseleave', () => cube.style.opacity = state.viewerSettings.viewCubeOpacity || 0.85);
 
@@ -728,32 +723,14 @@ export class IsometricRenderer {
       `;
       const half = size / 2;
 
-      // We map faces relative to the World.
-      // If Z-up: Z=Up, Y=North, X=East
-      const isZup = state.viewerSettings.axisConvention === 'Z-up';
-
-      // Default Native (Y-up):
-      // Top (+Y), Bottom (-Y), Right (+X), Left (-X), Front (+Z), Back (-Z)
-      let FACES;
-      if (isZup) {
-          FACES = [
-              { label: 'TOP',   rot: 'rotateX(-90deg)',                        bg: '#2E75B6', cam: [0, 1, 0], up: [0, 0, -1] },
-              { label: 'BTM',   rot: 'rotateX(90deg)',                         bg: '#1F4E79', cam: [0, -1, 0], up: [0, 0, 1] },
-              { label: 'RIGHT', rot: `rotateY(90deg) translateZ(${half}px)`,   bg: '#5B9BD5', cam: [1, 0, 0], up: [0, 1, 0] },
-              { label: 'LEFT',  rot: `rotateY(-90deg) translateZ(${half}px)`,  bg: '#5B9BD5', cam: [-1, 0, 0], up: [0, 1, 0] },
-              { label: 'FRONT', rot: `translateZ(${half}px)`,                  bg: '#41719C', cam: [0, 0, 1], up: [0, 1, 0] },
-              { label: 'BACK',  rot: `rotateY(180deg) translateZ(${half}px)`,  bg: '#41719C', cam: [0, 0, -1], up: [0, 1, 0] },
-          ];
-      } else {
-          FACES = [
-              { label: 'TOP',   rot: 'rotateX(-90deg)',                        bg: '#2c7c45', cam: [0, 1, 0], up: [0, 0, -1] },
-              { label: 'BTM',   rot: 'rotateX(90deg)',                         bg: '#1a4d2b', cam: [0, -1, 0], up: [0, 0, 1] },
-              { label: 'RIGHT', rot: `rotateY(90deg) translateZ(${half}px)`,   bg: '#3a6e85', cam: [1, 0, 0], up: [0, 1, 0] },
-              { label: 'LEFT',  rot: `rotateY(-90deg) translateZ(${half}px)`,  bg: '#3a6e85', cam: [-1, 0, 0], up: [0, 1, 0] },
-              { label: 'FRONT', rot: `translateZ(${half}px)`,                  bg: '#4a7c95', cam: [0, 0, 1], up: [0, 1, 0] },
-              { label: 'BACK',  rot: `rotateY(180deg) translateZ(${half}px)`,  bg: '#4a7c95', cam: [0, 0, -1], up: [0, 1, 0] },
-          ];
-      }
+      const FACES = [
+          { label: 'Top', rot: 'rotateX(-90deg)', bg: '#3b6ea5', cam: [0, 1, 0], up: [0, 0, -1] },
+          { label: 'Bot', rot: 'rotateX(90deg)', bg: '#2b5285', cam: [0, -1, 0], up: [0, 0, 1] },
+          { label: 'Front', rot: `translateZ(${half}px)`, bg: '#4a7c95', cam: [0, 0, 1], up: [0, 1, 0] },
+          { label: 'Back', rot: `rotateY(180deg) translateZ(${half}px)`, bg: '#4a7c95', cam: [0, 0, -1], up: [0, 1, 0] },
+          { label: 'Right', rot: `rotateY(90deg) translateZ(${half}px)`, bg: '#3a6e85', cam: [1, 0, 0], up: [0, 1, 0] },
+          { label: 'Left', rot: `rotateY(-90deg) translateZ(${half}px)`, bg: '#3a6e85', cam: [-1, 0, 0], up: [0, 1, 0] },
+      ];
 
       for (const f of FACES) {
           const face = document.createElement('div');
@@ -771,29 +748,43 @@ export class IsometricRenderer {
           inner.appendChild(face);
       }
 
-      // Add edges and corners in CSS as absolute positioned invisible hitboxes.
-      // (Skipping full 26-box setup for brevity; just face snaps for this implementation)
+      const cornerPositions = [
+          { style: 'top:-8px;right:-8px', cam: [1, 1, -1], up: [0, 1, 0] },
+          { style: 'top:-8px;left:-8px', cam: [-1, 1, -1], up: [0, 1, 0] },
+          { style: 'bottom:-8px;right:-8px', cam: [1, -1, 1], up: [0, 1, 0] },
+          { style: 'bottom:-8px;left:-8px', cam: [-1, -1, 1], up: [0, 1, 0] },
+      ];
+
+      for (const cp of cornerPositions) {
+          const corner = document.createElement('div');
+          corner.title = 'ISO view';
+          corner.style.cssText = `
+              position:absolute;${cp.style};width:16px;height:16px;
+              background:#ffffff22;border:1px solid #ffffff55;border-radius:50%;
+              cursor:pointer;z-index:12;display:flex;align-items:center;justify-content:center;
+              font-size:8px;color:#fff;
+          `;
+          corner.textContent = '◆';
+          corner.addEventListener('click', (e) => { e.stopPropagation(); this._snapToPreset(cp.cam, cp.up); });
+          inner.appendChild(corner);
+      }
 
       cube.appendChild(inner);
       this._viewCubeInner = inner;
       this._viewCubeEl = cube;
       this._container.appendChild(cube);
 
-      if (!state.viewerSettings.showViewCube) {
+      if (state.viewerSettings.showViewCube === false) {
           cube.style.display = 'none';
       }
   }
 
   _syncViewCube() {
-      if (!this._viewCubeInner || !this._camera || !state.viewerSettings.showViewCube) return;
+      if (!this._viewCubeInner || !this._camera || state.viewerSettings.showViewCube === false) return;
       const q = this._camera.quaternion.clone();
 
-      // If we rotate the scene root to emulate Z-up, the camera is pointing relatively differently
-      // in world space. We want the View Cube to reflect the camera's rotation relative to the SCENE ROOT.
       if (state.viewerSettings.axisConvention === 'Z-up') {
-         // The scene root is rotated -90 on X
          const rootQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-         // Find camera relative to root
          q.premultiply(rootQ.clone().invert());
       }
 
